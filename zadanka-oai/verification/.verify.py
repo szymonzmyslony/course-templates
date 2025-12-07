@@ -15,7 +15,7 @@ except NameError as e:
 except Exception as e:
     print(json.dumps({
         "passed": False,
-        "message": f"Error: {str(e)}"
+        "message": f"Error running \"match_images\": {str(e)}"
     }))
 
 from metrics import evaluate
@@ -38,10 +38,10 @@ if results['status'] == False:
 if results['score']['private_b'] > 0.9:
     print(json.dumps({
         "passed": True,
-        "message": f"Private a score: {results['score']['private_a']:.4f}, Private b score: {results['score']['private_b']:.4f}",
+        "message": f"Public a score: {results['score']['public_a']:.4f}, Private b score: {results['score']['private_b']:.4f}",
     }))
 else:
     print(json.dumps({
         "passed": False,
-        "message": f"Private a score: {results['score']['private_a']:.4f}, Private b score: {results['score']['private_b']:.4f}",
+        "message": f"Public a score: {results['score']['public_a']:.4f}, Private b score: {results['score']['private_b']:.4f}",
     }))
