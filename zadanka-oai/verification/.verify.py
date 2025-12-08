@@ -19,8 +19,6 @@ except Exception as e:
         "message": f"Error running \"match_images\": {str(e)}"
     }))
 
-from metrics import evaluate
-
 try:
     score = evaluate(OUTPUT_PATH / "submission.npy", 'answers_test.npy')
 
