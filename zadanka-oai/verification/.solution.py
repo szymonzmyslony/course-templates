@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR
-rain_dir = Path("training_set")
+train_dir = Path("train")
 class CLIPReID(nn.Module):
     def __init__(self, unfreeze_last_n_layers=1):
         super(CLIPReID, self).__init__()
