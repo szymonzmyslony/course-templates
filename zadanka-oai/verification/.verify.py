@@ -3,10 +3,11 @@ import json
 
 DATA_PATH = Path("")
 OUTPUT_PATH = Path("")
+ 
+ACCEPTANCE_THRESHOLD = 0.9
 
 try:
-    match_images(DATA_PATH / "validation_set", OUTPUT_PATH / "submission_a.npy")
-    match_images(DATA_PATH / "test_set", OUTPUT_PATH / "submission_b.npy")
+    match_images(DATA_PATH / "test_set", OUTPUT_PATH / "submission.npy")
 except NameError as e:
     print(json.dumps({
         "passed": False,
@@ -21,7 +22,7 @@ except Exception as e:
 from metrics import evaluate
 
 try:
-    results = evaluate()
+    score = evaluate(OUTPUT_PATH / "submission.npy", 'answers_test.npy')
 
 except Exception as e:
     print(json.dumps({
@@ -29,19 +30,19 @@ except Exception as e:
         "message": f"Error during evaluation: {str(e)}"
     }))
 
-if results['status'] == False:
+if score is None:
     print(json.dumps({
         "passed": False,
-        "message": f'Evaluation failed: {results["msg"]}'
+        "message": f'Evaluation failed'
     }))
 
-if results['score']['private_b'] > 0.9:
+if score > ACCEPTANCE_THRESHOLD:
     print(json.dumps({
         "passed": True,
-        "message": f"Public a score: {results['score']['public_a']:.4f}, Private b score: {results['score']['private_b']:.4f}",
+        "message": f"Score: {score:.4f}",
     }))
 else:
     print(json.dumps({
         "passed": False,
-        "message": f"Public a score: {results['score']['public_a']:.4f}, Private b score: {results['score']['private_b']:.4f}",
+        "message": f"Score: {score:.4f}",
     }))

@@ -259,7 +259,11 @@ def extract_features(model, image_dir):
             features[img_name[:-4]] = feat.cpu().numpy()
     return features
 
-def match_images(query_dir, gallery_dir, prevent_gallery_reuse, save_path):
+def match_images(input_dir, output_path):
+    query_dir = input_dir / "query"
+    gallery_dir = input_dir / "gallery"
+
+    prevent_gallery_reuse=True
     # Load two models
     crop_model = CLIPReID()
     gender_model = CLIPReID()
@@ -327,5 +331,5 @@ def match_images(query_dir, gallery_dir, prevent_gallery_reuse, save_path):
             results[int(q_name)-1] = int(gender_match)
     
     # save the results
-    np.save(save_path, results)
-    print(f"Matched {query_dir} with {gallery_dir}, results saved to {save_path}")
+    np.save(output_path, results)
+    print(f"Matched {query_dir} with {gallery_dir}, results saved to {output_path}")
