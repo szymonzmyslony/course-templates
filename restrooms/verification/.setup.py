@@ -11,3 +11,6 @@ with zipfile.ZipFile('validation_set.zip', 'r') as zip_ref:
 import numpy as np
 import os
 from pathlib import Path
+
+# Import the evaluate function so verifier can use it
+from metrics import evaluate_test_set as evaluate
