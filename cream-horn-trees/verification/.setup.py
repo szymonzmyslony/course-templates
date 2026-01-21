@@ -11,6 +11,8 @@ import numpy as np
 
 labels_train_df = pd.read_csv('labels_train.csv')
 labels_valid_df = pd.read_csv('labels_valid.csv')
+labels_validation_df = labels_valid_df  # alias
 labels_test_df = pd.read_csv('labels_test.csv')
 trees_valid_df = pd.read_csv('trees_valid.csv')
+trees_validation_df = trees_valid_df  # alias
 trees_test_df = pd.read_csv('trees_test.csv')
