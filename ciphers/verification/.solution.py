@@ -1,142 +1,171 @@
+import numpy as np
+from gensim.models import Word2Vec
+from sklearn.cluster import KMeans
+from collections import Counter, defaultdict
+import random
+import math
+
+
 def decipher_corpus(clear_corpus, ciphered_corpus):
     """
-    Self-contained decipherer based on the provided notebook logic.
-
-    Args:
-        clear_corpus:   list[str]  (reference "clear" lines, already lowercased/stripped preferred)
-        ciphered_corpus:list[str]  (ciphered lines to decipher, already lowercased/stripped preferred)
-
-    Returns:
-        list[str]: deciphered lines (unknown chars become '🦡')
+    Deciphers the ciphered_corpus using statistics from clear_corpus.
+    Strategy:
+    1. Letter2Vec to embed symbols based on context.
+    2. KMeans to group the 3 symbols for 'a', 'b', etc. together.
+    3. Frequency matching to assign clusters to likely letters.
+    4. Bigram-based hill climbing to correct the mapping.
     """
-    # Imports kept inside to make the function self-contained
-    from gensim.models import Word2Vec as Letter2Vec
-    from collections import defaultdict as dd
 
-    # ---- normalize input (match notebook behavior) ----
-    corpus_clear = [str(line).strip().lower() for line in clear_corpus]
-    corpus_ciphered = [str(line).strip().lower() for line in ciphered_corpus]
+    # --- 1. Preprocessing & Vocabulary Building ---
 
-    # ---- 1) Train Letter2Vec on ciphered corpus ----
-    model = Letter2Vec(
-        sentences=corpus_ciphered,
-        vector_size=20,
-        window=2,
-        min_count=10,
+    # Flatten clear corpus to get alphabet and counts
+    clear_text_joined = "".join(clear_corpus)
+    clear_counter = Counter(clear_text_joined)
+    alphabet = sorted(list(clear_counter.keys()))
+    num_chars = len(alphabet)
+
+    # Build Bigram Statistics for Clear Text (for scoring)
+    bigram_counts = defaultdict(lambda: 0)
+    for line in clear_corpus:
+        for c1, c2 in zip(line, line[1:]):
+            bigram_counts[(c1, c2)] += 1
+
+    # Normalize bigrams to log-probabilities with Laplace smoothing
+    total_bigrams = sum(bigram_counts.values())
+    bigram_log_probs = defaultdict(lambda: -15.0)  # Default low probability
+    vocab_size = len(alphabet)
+
+    for (c1, c2), count in bigram_counts.items():
+        # Smoothed probability: log((count + 1) / (total + vocab^2))
+        prob = (count + 1) / (total_bigrams + vocab_size**2)
+        bigram_log_probs[(c1, c2)] = math.log(prob)
+
+    # --- 2. Train Embeddings (Letter2Vec) ---
+
+    # Tokenize cipher corpus for Gensim (list of list of symbols)
+    cipher_sentences = [list(line) for line in ciphered_corpus]
+
+    # Train Word2Vec on symbols
+    # Window=3 captures immediate neighbors. min_count=1 ensures all symbols are included.
+    model = Word2Vec(
+        sentences=cipher_sentences,
+        vector_size=30,
+        window=3,
+        min_count=1,
         workers=4,
-    )
-    keys = model.wv.index_to_key
-
-    # ---- 2) Find "good triples" and build correcting_table ----
-    stats = dd(int)
-    for k in keys:
-        Rloc = [k]
-        Rloc += [k0 for (k0, _) in model.wv.most_similar(k, topn=2)]
-        Rloc = tuple(sorted(Rloc))
-        stats[Rloc] += 1
-
-    good_triples = set()
-    for k, v in stats.items():
-        if v == 3:
-            good_triples.update(k)
-
-    correcting_table = {}
-    for t in stats:
-        for a in t:
-            if a in good_triples:
-                correcting_table[a] = t[0]
-
-    # ---- 3) Apply correcting_table to ciphered corpus ----
-    corpus_ciphered_unified = []
-    for line in corpus_ciphered:
-        unified_line = []
-        for ch in line:
-            unified_line.append(correcting_table.get(ch, ch))
-        corpus_ciphered_unified.append("".join(unified_line))
-
-    # ---- 4) N-gram statistics helpers ----
-    def normalize_dist(d):
-        s = float(sum(d.values())) or 1.0
-        for x in list(d.keys()):
-            d[x] /= s
-        return d
-
-    def stats_for_corpus(corpus, N):
-        st = dd(int)
-        for line in corpus:
-            if len(line) < N:
-                continue
-            for i in range(len(line) - N + 1):
-                b = tuple(line[i : i + N])
-                st[b] += 1
-        return normalize_dist(st)
-
-    stats_clear1 = stats_for_corpus(corpus_clear, 1)
-    stats_clear3 = stats_for_corpus(corpus_clear, 3)
-
-    stats_dirty1 = stats_for_corpus(corpus_ciphered_unified, 1)
-    stats_dirty3 = stats_for_corpus(corpus_ciphered_unified, 3)
-
-    # ---- 5) Build trigram candidate sets ----
-    def add_most_frequent(trigrams, st3):
-        most_freq_val = dd(float)
-        most_freq = {}
-        for t in st3:
-            for a in t:
-                if st3[t] > most_freq_val[a]:
-                    most_freq_val[a] = st3[t]
-                    most_freq[a] = t
-        for t in most_freq.values():
-            trigrams.add(t)
-
-    top_trigrams_clear = set(
-        sorted(stats_clear3, key=stats_clear3.get, reverse=True)[:400]
-    )
-    top_trigrams_dirty = set(
-        sorted(stats_dirty3, key=stats_dirty3.get, reverse=True)[:400]
+        epochs=20,
+        sg=1,
     )
 
-    add_most_frequent(top_trigrams_clear, stats_clear3)
-    add_most_frequent(top_trigrams_dirty, stats_dirty3)
+    # Get all unique symbols in cipher text
+    cipher_symbols = list(model.wv.index_to_key)
+    vectors = np.array([model.wv[s] for s in cipher_symbols])
 
-    # ---- 6) Define trigram distance and infer mapping R ----
-    def prob_dist(p1, p2):
-        # NOTE: name collision in notebook; this is the *distance* version
-        if p1 == 0 and p2 == 0:
-            return 0.0
-        m = max(p1, p2)
-        return abs(p1 - p2) / m if m else 0.0
+    # --- 3. Clustering ---
 
-    def dist(tc, td):
-        unigram_prob_c = [stats_clear1.get((x,), 0.0) for x in tc]
-        unigram_prob_d = [stats_dirty1.get((x,), 0.0) for x in td]
-        res = sum(prob_dist(cc, dd_) for cc, dd_ in zip(unigram_prob_c, unigram_prob_d))
-        return res + prob_dist(stats_clear3.get(tc, 0.0), stats_dirty3.get(td, 0.0))
+    # We know there are `num_chars` (n) bags.
+    # We cluster the symbols into `num_chars` clusters.
+    # Ideally, each cluster contains the 3 symbols for one specific letter.
+    kmeans = KMeans(n_clusters=num_chars, n_init=10, random_state=42)
+    kmeans.fit(vectors)
+    labels = kmeans.labels_
 
-    aux = []
-    for c in top_trigrams_clear:
-        for d in top_trigrams_dirty:
-            aux.append((dist(c, d), c, d))
-    aux.sort(key=lambda x: x[0])
+    # Map each symbol to a Cluster ID (0 to n-1)
+    symbol_to_cluster_id = {sym: label for sym, label in zip(cipher_symbols, labels)}
 
-    R = {}
-    for _, t1, t2 in aux:
-        correct = 0
-        for a, b in zip(t1, t2):
-            if b not in R or R[b] == a:
-                correct += 1
-        if correct == 3:
-            for a, b in zip(t1, t2):
-                R[b] = a
+    # Handle symbols that might not be in the model (extremely rare edge case)
+    # Assign them to a random cluster or closest one.
+    # Here we assume all symbols appeared at least once.
 
-    # ---- 7) Apply mapping to decode ----
-    def change(mapping, line):
-        out = []
-        for ch in line:
-            if ch in mapping:
-                out.append(mapping[ch])
+    # --- 4. Initial Mapping by Frequency ---
+
+    # Calculate Cluster Frequencies in Cipher Text
+    cluster_counter = Counter()
+    for line in ciphered_corpus:  # Count directly from corpus just to be safe
+        for char in line:
+            if char in symbol_to_cluster_id:
+                cluster_counter[symbol_to_cluster_id[char]] += 1
+
+    # Sort clear letters by frequency
+    sorted_clear_chars = [pair[0] for pair in clear_counter.most_common()]
+
+    # Sort cipher clusters by frequency
+    sorted_clusters = [pair[0] for pair in cluster_counter.most_common()]
+
+    # If counts mismatch (some clusters might have 0 count if extremely rare, though unlikely), pad
+    if len(sorted_clusters) < len(sorted_clear_chars):
+        missing = set(range(num_chars)) - set(sorted_clusters)
+        sorted_clusters.extend(list(missing))
+
+    # Create initial mapping: Rank 1 Cluster -> Rank 1 Letter
+    cluster_to_char_map = {}
+    for i in range(min(len(sorted_clusters), len(sorted_clear_chars))):
+        cluster_to_char_map[sorted_clusters[i]] = sorted_clear_chars[i]
+
+    # --- 5. Refinement: Hill Climbing with Bigrams ---
+
+    # Create a smaller sample for optimization to speed up the loop
+    # We convert the sample to a list of Cluster IDs to avoid looking up symbols constantly
+    sample_size = min(2000, len(ciphered_corpus))
+    validation_lines_ids = []
+
+    for line in ciphered_corpus[:sample_size]:
+        ids = [symbol_to_cluster_id.get(c, -1) for c in line]
+        # Filter out unknown symbols (-1) if any
+        validation_lines_ids.append([x for x in ids if x != -1])
+
+    def score_mapping(current_map):
+        """Calculate log likelihood of the validation set under current mapping."""
+        total_score = 0.0
+        for line_ids in validation_lines_ids:
+            # Convert cluster IDs to proposed text
+            text = [current_map[cid] for cid in line_ids]
+            # Sum bigram logs
+            for i in range(len(text) - 1):
+                total_score += bigram_log_probs[(text[i], text[i + 1])]
+        return total_score
+
+    # Initial Score
+    current_score = score_mapping(cluster_to_char_map)
+
+    # Optimization Loop
+    # Try swapping assignments to improve bigram probability
+    iterations = 3000
+    distinct_clusters = list(cluster_to_char_map.keys())
+
+    for k in range(iterations):
+        # Pick two random clusters to swap
+        c1, c2 = random.sample(distinct_clusters, 2)
+
+        char1 = cluster_to_char_map[c1]
+        char2 = cluster_to_char_map[c2]
+
+        # Swap
+        cluster_to_char_map[c1] = char2
+        cluster_to_char_map[c2] = char1
+
+        new_score = score_mapping(cluster_to_char_map)
+
+        if new_score > current_score:
+            current_score = new_score
+            # Keep the swap
+        else:
+            # Revert the swap
+            cluster_to_char_map[c1] = char1
+            cluster_to_char_map[c2] = char2
+
+    # --- 6. Final Deciphering ---
+
+    deciphered_lines = []
+    for line in ciphered_corpus:
+        decoded_chars = []
+        for symbol in line:
+            if symbol in symbol_to_cluster_id:
+                cluster_id = symbol_to_cluster_id[symbol]
+                decoded_chars.append(cluster_to_char_map[cluster_id])
             else:
-                out.append("🦡")  # unknown
-        return "".join(out)
+                # Fallback for unknown symbol (shouldn't happen with min_count=1)
+                decoded_chars.append(" ")
+        deciphered_lines.append("".join(decoded_chars))
 
-    return [change(R, line) for line in corpus_ciphered_unified]
+    return deciphered_lines
