@@ -43,36 +43,35 @@ EMOJI_POOL = [
 ]
 
 def download_text():
-    """Download Shakespeare's complete works from Project Gutenberg."""
-    url = "https://www.gutenberg.org/cache/epub/100/pg100.txt"
-    print(f"Downloading text from {url}...")
+    """Download multiple books from Project Gutenberg for more data."""
+    # Multiple classic books for diverse English text
+    urls = [
+        "https://www.gutenberg.org/cache/epub/100/pg100.txt",   # Shakespeare complete works
+        "https://www.gutenberg.org/cache/epub/1342/pg1342.txt", # Pride and Prejudice
+        "https://www.gutenberg.org/cache/epub/11/pg11.txt",     # Alice in Wonderland
+        "https://www.gutenberg.org/cache/epub/84/pg84.txt",     # Frankenstein
+        "https://www.gutenberg.org/cache/epub/1661/pg1661.txt", # Sherlock Holmes
+        "https://www.gutenberg.org/cache/epub/98/pg98.txt",     # Tale of Two Cities
+        "https://www.gutenberg.org/cache/epub/2701/pg2701.txt", # Moby Dick
+        "https://www.gutenberg.org/cache/epub/1952/pg1952.txt", # The Yellow Wallpaper
+        "https://www.gutenberg.org/cache/epub/74/pg74.txt",     # Tom Sawyer
+        "https://www.gutenberg.org/cache/epub/76/pg76.txt",     # Huckleberry Finn
+    ]
 
-    try:
-        with urllib.request.urlopen(url, timeout=30) as response:
-            text = response.read().decode('utf-8')
-        print(f"Downloaded {len(text)} characters")
-        return text
-    except Exception as e:
-        print(f"Failed to download: {e}")
-        print("Using fallback: generating sample text...")
-        # Fallback: use a repeated sample if download fails
-        sample = """
-        To be, or not to be, that is the question:
-        Whether 'tis nobler in the mind to suffer
-        The slings and arrows of outrageous fortune,
-        Or to take arms against a sea of troubles
-        And by opposing end them. To die: to sleep;
-        No more; and by a sleep to say we end
-        The heart-ache and the thousand natural shocks
-        That flesh is heir to, 'tis a consummation
-        Devoutly to be wish'd. To die, to sleep;
-        To sleep: perchance to dream: ay, there's the rub;
-        For in that sleep of death what dreams may come
-        When we have shuffled off this mortal coil,
-        Must give us pause: there's the respect
-        That makes calamity of so long life;
-        """ * 1000
-        return sample
+    all_text = []
+    for url in urls:
+        print(f"Downloading from {url}...")
+        try:
+            with urllib.request.urlopen(url, timeout=30) as response:
+                text = response.read().decode('utf-8', errors='ignore')
+            print(f"  Downloaded {len(text)} characters")
+            all_text.append(text)
+        except Exception as e:
+            print(f"  Failed: {e}")
+
+    combined = '\n'.join(all_text)
+    print(f"Total downloaded: {len(combined)} characters")
+    return combined
 
 def process_text(text):
     """Process text: lowercase, split into lines, filter."""
@@ -143,15 +142,14 @@ def generate_data(output_dir):
     # Shuffle lines
     random.shuffle(all_lines)
 
-    # Split: 80% for clear_lines, 20% for ground_truth/ciphered
-    split_idx = int(len(all_lines) * 0.8)
+    # Split: 90% for clear_lines, 10% for ground_truth/ciphered (similar to workspace 10:1 ratio)
+    split_idx = int(len(all_lines) * 0.9)
     clear_lines = all_lines[:split_idx]
     ground_truth_lines = all_lines[split_idx:]
 
     # Limit sizes similar to workspace ratios
     # Workspace: 308k clear, 30k ciphered (~10:1)
-    # Let's do: 100k clear, 25k ciphered (4:1 is fine)
-    clear_lines = clear_lines[:100000]
+    # Use all available clear lines, limit ciphered to 25k
     ground_truth_lines = ground_truth_lines[:25000]
 
     print(f"Clear lines: {len(clear_lines)}")
