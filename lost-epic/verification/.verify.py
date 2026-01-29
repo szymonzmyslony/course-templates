@@ -1,30 +1,95 @@
 import json
+
 def evaluate(vocab):
-    target_tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-    target_vocab = target_tokenizer.get_vocab()
+    """Evaluate the restored vocab against the ground truth."""
+
+    # Load ground truth from LOCAL backup file (no network needed!)
+    try:
+        with open('tokenizer/tokenizer.json.bak', 'r', encoding='utf-8') as f:
+            tok_json = json.load(f)
+        target_vocab = dict(tok_json['model']['vocab'])
+    except FileNotFoundError:
+        print(json.dumps({
+            "stage": "setup",
+            "ok": False,
+            "message": "Ground truth file tokenizer/tokenizer.json.bak not found"
+        }))
+        return 0.0
+    except Exception as e:
+        print(json.dumps({
+            "stage": "setup",
+            "ok": False,
+            "message": f"Error loading ground truth: {str(e)}"
+        }))
+        return 0.0
+
+    # Validate input type
+    if not isinstance(vocab, dict):
+        print(json.dumps({
+            "stage": "eval",
+            "ok": False,
+            "message": f"Expected dict, got {type(vocab).__name__}"
+        }))
+        return 0.0
+
+    # Validate keys match
     if set(target_vocab.keys()) != set(vocab.keys()):
+        missing = len(set(target_vocab.keys()) - set(vocab.keys()))
+        extra = len(set(vocab.keys()) - set(target_vocab.keys()))
         print(json.dumps({
-            "passed": False,
-            "message": "The keys in the provided vocab do not match the keys in the target vocab."
+            "stage": "eval",
+            "ok": False,
+            "message": f"Key mismatch: {missing} missing, {extra} extra keys"
         }))
-    correct = sum([target_vocab[x] == vocab[x] for x in target_vocab.keys()])
-    MIN_REQUIRED = 49500
-    MAX_REQUIRED = 49800
+        return 0.0
 
-    score = min(1, max(0, (correct - MIN_REQUIRED) / (MAX_REQUIRED - MIN_REQUIRED)))
-
-    if score == 1:
+    # Count correct mappings
+    try:
+        correct = sum(1 for k in target_vocab if vocab.get(k) == target_vocab[k])
+    except Exception as e:
         print(json.dumps({
-            "passed": True,
-            "message": "All required tokens matched!" 
+            "stage": "eval",
+            "ok": False,
+            "message": f"Error comparing entries: {str(e)}"
         }))
-    else:
-        print(json.dumps({
-            "passed": False,
-            "message": f"Only {correct} out of {len(target_vocab)} tokens matched. Required tokens matched should be between {MIN_REQUIRED} and {MAX_REQUIRED}."
-        }))
+        return 0.0
 
+    # Calculate score (linear between MIN and MAX)
+    total = len(target_vocab)
+    MIN_REQUIRED = 49_500
+    MAX_REQUIRED = 49_800
+
+    score = (correct - MIN_REQUIRED) / (MAX_REQUIRED - MIN_REQUIRED)
+    score = max(0.0, min(1.0, float(score)))
+
+    print(json.dumps({
+        "stage": "result",
+        "ok": True,
+        "correct": correct,
+        "total": total,
+        "score": score
+    }))
+
+    return score
+
+
+# --- Run evaluation ---
 try:
-    evaluate(restored_vocab)
+    score = evaluate(restored_vocab)
+except NameError:
+    print(json.dumps({
+        "stage": "fatal",
+        "ok": False,
+        "message": "Variable 'restored_vocab' not defined. Did you forget to create it?"
+    }))
+    score = 0.0
 except Exception as e:
-    print(f"Error during evaluation: {str(e)}")
+    print(json.dumps({
+        "stage": "fatal",
+        "ok": False,
+        "message": f"Unhandled error: {str(e)}"
+    }))
+    score = 0.0
+
+# REQUIRED: Return numeric score as final expression
+score
